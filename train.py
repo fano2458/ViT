@@ -37,8 +37,22 @@ model = ViT().to(device)
 weights = torch.load('weights/model.bin')
 model.load_state_dict(weights, strict=False)
 
+loaded_keys = set(weights.keys())
+model_keys = set(model.state_dict().keys())
+
+print(model_keys) # TODO change names so that all weights can be loaded
+
+common_keys = loaded_keys.intersection(model_keys)
+print("Common Keys (Loaded and Model):", common_keys)
+
+extra_keys = loaded_keys - model_keys
+print("Extra Keys (Loaded but not in Model):", extra_keys)
+
+missing_keys = model_keys - loaded_keys
+print("Missing Keys (Model but not in Loaded):", missing_keys)
+
 criterion = torch.nn.CrossEntropyLoss()
-optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
+optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, weight_decay=3e-3)
 
 num_epochs = 5
 for epoch in range(num_epochs):
@@ -70,7 +84,7 @@ for epoch in range(num_epochs):
 
     model.eval() 
     with torch.no_grad():
-        for inputs, labels in tqmd(testloader, "Testing"):
+        for inputs, labels in tqdm(testloader, "Testing"):
             inputs, labels = inputs.to(device), labels.to(device)
             
             outputs = model(inputs)
