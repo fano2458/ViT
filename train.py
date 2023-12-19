@@ -1,20 +1,26 @@
 import torch
-from src.vit import ViT
+from src.vit_br import ViT, CONFIGS
 
 import torchvision
 import torchvision.transforms as transforms
 
 from tqdm import tqdm
-
+import numpy as np
 
 
 # Training Parameters
 batch_size = 64
+img_size = 224
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
+def maybe_print(s: str, flag: bool):
+    if flag:
+        print(s)
+
+
 transform = transforms.Compose([
-    transforms.Resize(224),
+    transforms.Resize(img_size),
     transforms.ToTensor(),
     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
 ])
@@ -32,29 +38,17 @@ testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size,
 
 classes = ['plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
 
-model = ViT().to(device)
+config = CONFIGS["ViT-Ti_16"]
 
-weights = torch.load('weights/model.bin')
-model.load_state_dict(weights, strict=False)
+model = ViT(config, img_size, num_classes=len(classes))
+model.load_from(np.load(r"weights/Ti_16.npz"))
+model.to(device)
 
-loaded_keys = set(weights.keys())
-model_keys = set(model.state_dict().keys())
-
-print(model_keys) # TODO change names so that all weights can be loaded
-
-common_keys = loaded_keys.intersection(model_keys)
-print("Common Keys (Loaded and Model):", common_keys)
-
-extra_keys = loaded_keys - model_keys
-print("Extra Keys (Loaded but not in Model):", extra_keys)
-
-missing_keys = model_keys - loaded_keys
-print("Missing Keys (Model but not in Loaded):", missing_keys)
 
 criterion = torch.nn.CrossEntropyLoss()
 optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, weight_decay=3e-3)
 
-num_epochs = 5
+num_epochs = 3
 for epoch in range(num_epochs):
     train_loss = 0.0
     train_correct = 0
@@ -65,7 +59,7 @@ for epoch in range(num_epochs):
         inputs, labels = inputs.to(device), labels.to(device)
         
         optimizer.zero_grad()
-        outputs = model(inputs)
+        outputs, _ = model(inputs)
         loss = criterion(outputs, labels)
         loss.backward()
         optimizer.step()
@@ -87,7 +81,7 @@ for epoch in range(num_epochs):
         for inputs, labels in tqdm(testloader, "Testing"):
             inputs, labels = inputs.to(device), labels.to(device)
             
-            outputs = model(inputs)
+            outputs, _ = model(inputs)
             loss = criterion(outputs, labels)
 
             val_loss += loss.item()
