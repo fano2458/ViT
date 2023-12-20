@@ -28,6 +28,17 @@ def np2th(weights, conv=False):
     return torch.from_numpy(weights)
 
 
+
+class ChannelImportance(nn.Module):
+    def __init__(self, num_channels):
+        super(ChannelImportance, self).__init__()
+        
+        self.importance = nn.Parameter(torch.ones(num_channels))
+        
+    def forward(self, x):
+        return x.mul(self.importance)
+
+
 class Attention(nn.Module):
     def __init__(self, config, visualize):
         super(Attention, self).__init__()
@@ -35,6 +46,8 @@ class Attention(nn.Module):
         self.num_attention_heads = config.transformer["num_heads"]
         self.attention_head_size = int(config.hidden_size / self.num_attention_heads)
         self.all_head_size = self.num_attention_heads * self.attention_head_size
+        
+        self.channel_importance = ChannelImportance(self.all_head_size)
         
         self.query = Linear(config.hidden_size, self.all_head_size) # why to this dim
         self.key = Linear(config.hidden_size, self.all_head_size)
@@ -52,6 +65,9 @@ class Attention(nn.Module):
         return x.permute(0, 2, 1, 3)
     
     def forward(self, hidden_states): # check shapes
+        
+        hidden_states = self.channel_importance(hidden_states) # for pruning
+        
         mixed_query_layer = self.query(hidden_states)
         mixed_key_layer = self.key(hidden_states)
         mixed_value_layer = self.value(hidden_states)
@@ -72,6 +88,9 @@ class Attention(nn.Module):
         context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
         context_layer = context_layer.view(*new_context_layer_shape)
+        
+        context_layer = self.channel_importance(context_layer) # for pruning
+        
         attention_output = self.out(context_layer)
         attention_output = self.proj_dropout(attention_output)
         return attention_output, weights
@@ -85,6 +104,9 @@ class Mlp(nn.Module):
         self.act_fn = torch.nn.functional.gelu
         self.dropout = Dropout(config.transformer["dropout_rate"])
         
+        self.mlp_importance1 = ChannelImportance(config.hidden_size)
+        self.mlp_importance2 = ChannelImportance(config.transformer["mlp_dim"])
+        
         self._init_weights()
         
     def _init_weights(self):
@@ -94,9 +116,11 @@ class Mlp(nn.Module):
         nn.init.normal_(self.fc2.bias, std=1e-6)
         
     def forward(self, x):
+        x = self.mlp_importance1(x) # for pruning
         x = self.fc1(x)
         x = self.act_fn(x)
         x = self.dropout(x)
+        x = self.mlp_importance2(x) # for pruning
         x = self.fc2(x)
         x = self.dropout(x)
         return x

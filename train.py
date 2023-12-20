@@ -10,6 +10,7 @@ import numpy as np
 import random
 import time
 
+from torchinfo import summary
 
 # Training Parameters
 batch_size = 64
@@ -206,6 +207,14 @@ def main():
     model = ViT(config, img_size, num_classes=len(classes), visualize=False)
     model.load_from(np.load(r"weights/Ti_16.npz"))
     model.to(device)
+    
+    
+    summary(model=model,
+        input_size=(64, 3, 224, 224),
+        col_names=["input_size", "output_size", "num_params", "trainable"],
+        col_width=20,
+        row_settings=["var_names"]
+    )
 
     train(model, trainloader, testloader)
     
