@@ -140,6 +140,8 @@ def train(model, trainloader, testloader):
     epoch = 0
     accuracy = -1
     
+    l1_lambda = 0.001
+    
     while True:
         epoch += 1
         model.train()
@@ -149,10 +151,22 @@ def train(model, trainloader, testloader):
             data_time.update(time.time() - end)
             batch = tuple(t.to(device) for t in batch)
             
+            #print(model.transformer.encoder.layer[0].attn.channel_importance.importance) # 0-11
+            #print(model.transformer.encoder.layer[0].ffn.fc1.weight)
+            #print(model.transformer.encoder.layer[0].ffn.mlp_importance1) # 0-11
+            #print(model.transformer.encoder.layer[0].ffn.mlp_importance2) # 0-11
+            
             x, y = batch
             outputs, _ = model(x)
             loss = criterion(outputs, y)
             
+            for i in range(0, 12):
+                l1_norm_attn = torch.norm(model.transformer.encoder.layer[i].attn.channel_importance.importance, p=1)
+                l1_norm_mlp1 = torch.norm(model.transformer.encoder.layer[i].ffn.mlp_importance1.importance, p=1)
+                l1_norm_mlp2 = torch.norm(model.transformer.encoder.layer[i].ffn.mlp_importance2.importance, p=1)
+                
+                loss = loss + l1_lambda * (l1_norm_attn + l1_norm_mlp1 + l1_norm_mlp2)
+                
             loss.backward()
             
             batch_time.update(time.time() - end)
@@ -183,6 +197,11 @@ def train(model, trainloader, testloader):
         
     print("Final accuracy: \t{}".format(accuracy))
     print("End training")
+    
+    
+    for i in range(12):
+        print(f"Layer {i} mask for D size")
+        print(model.transformer.encoder.layer[0].attn.channel_importance.importance) # 0-11
     
 
 def main():
