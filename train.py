@@ -221,7 +221,7 @@ def train(model, trainloader, testloader, config):
     # print(f"Pruning with pruning ratio of {pruning_ratio}")
     # print(f"Threshold value is {threshold}")
     
-    model = ViT(config, img_size, num_classes=10, visualize=False, prune=True, ratio=0.2, store_masks=True)
+    model = ViT(config, img_size, num_classes=10, visualize=False, prune=True, ratio=0.05)
     
     model.load_state_dict(torch.load("weights.pth"))
     model.to(device)

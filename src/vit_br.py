@@ -73,6 +73,7 @@ class Attention(nn.Module):
         hidden_states = self.channel_importance(hidden_states) # for pruning
         if self.prune:
             if self.masks_channel is None:
+                print("Computing mask for channels")
                 scores = sorted(self.channel_importance.importance.detach())
                 threshold_indx = int(self.ratio * len(scores))
                 threshold = scores[threshold_indx]
@@ -104,6 +105,7 @@ class Attention(nn.Module):
         
         if self.prune:
             if self.masks_context is None:
+                print("Computing mask for context")
                 scores = sorted(self.context_importance.importance.detach())
                 threshold_indx = int(self.ratio * len(scores))
                 threshold = scores[threshold_indx]
@@ -116,7 +118,7 @@ class Attention(nn.Module):
     
 
 class Mlp(nn.Module):
-    def __init__(self, config, prune, ratio, store_masks):
+    def __init__(self, config, prune, ratio):
         super(Mlp, self).__init__()
         self.prune = prune
         self.ratio = ratio
@@ -142,6 +144,7 @@ class Mlp(nn.Module):
         x = self.mlp_importance1(x) # for pruning
         if self.prune:
             if self.masks_mlp1 is None:
+                print("Computing mask for FC1")
                 scores = sorted(self.mlp_importance1.importance.detach())
                 threshold_indx = int(self.ratio * len(scores))
                 threshold = scores[threshold_indx]
@@ -154,6 +157,7 @@ class Mlp(nn.Module):
         x = self.mlp_importance2(x) # for pruning
         if self.prune:
             if self.masks_mlp2 is None:
+                print("Computing mask for FC2")
                 scores = sorted(self.mlp_importance2.importance.detach())
                 threshold_indx = int(self.ratio * len(scores))
                 threshold = scores[threshold_indx]
