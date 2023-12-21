@@ -45,6 +45,8 @@ class Attention(nn.Module):
         self.visualize = visualize
         self.prune = prune
         self.ratio = ratio
+        self.masks_channel = None
+        self.masks_context = None
         self.num_attention_heads = config.transformer["num_heads"]
         self.attention_head_size = int(config.hidden_size / self.num_attention_heads)
         self.all_head_size = self.num_attention_heads * self.attention_head_size
@@ -70,12 +72,13 @@ class Attention(nn.Module):
     def forward(self, hidden_states): # check shapes            
         hidden_states = self.channel_importance(hidden_states) # for pruning
         if self.prune:
-            scores = sorted(self.channel_importance.importance.detach())
-            threshold_indx = int(self.ratio * len(scores))
-            threshold = scores[threshold_indx]
-            mask = self.channel_importance.importance > threshold
-            hidden_states = hidden_states * mask
-        
+            if self.masks_channel is None:
+                scores = sorted(self.channel_importance.importance.detach())
+                threshold_indx = int(self.ratio * len(scores))
+                threshold = scores[threshold_indx]
+                self.masks_channel = self.channel_importance.importance > threshold
+            hidden_states = hidden_states * self.masks_channel
+            
         mixed_query_layer = self.query(hidden_states)
         mixed_key_layer = self.key(hidden_states)
         mixed_value_layer = self.value(hidden_states)
@@ -100,22 +103,25 @@ class Attention(nn.Module):
         context_layer = self.channel_importance(context_layer) # for pruning
         
         if self.prune:
-            scores = sorted(self.context_importance.importance.detach())
-            threshold_indx = int(self.ratio * len(scores))
-            threshold = scores[threshold_indx]
-            mask = self.context_importance.importance > threshold
-            hidden_states = hidden_states * mask
-        
+            if self.masks_context is None:
+                scores = sorted(self.context_importance.importance.detach())
+                threshold_indx = int(self.ratio * len(scores))
+                threshold = scores[threshold_indx]
+                self.masks_context = self.context_importance.importance > threshold
+            hidden_states = hidden_states * self.masks_context
+            
         attention_output = self.out(context_layer)
         attention_output = self.proj_dropout(attention_output)
         return attention_output, weights
     
 
 class Mlp(nn.Module):
-    def __init__(self, config, prune, ratio):
+    def __init__(self, config, prune, ratio, store_masks):
         super(Mlp, self).__init__()
         self.prune = prune
         self.ratio = ratio
+        self.masks_mlp1 = None
+        self.masks_mlp2 = None
         self.fc1 = Linear(config.hidden_size, config.transformer["mlp_dim"])
         self.fc2 = Linear(config.transformer["mlp_dim"], config.hidden_size)
         self.act_fn = torch.nn.functional.gelu
@@ -135,21 +141,25 @@ class Mlp(nn.Module):
     def forward(self, x):
         x = self.mlp_importance1(x) # for pruning
         if self.prune:
-            scores = sorted(self.mlp_importance1.importance.detach())
-            threshold_indx = int(self.ratio * len(scores))
-            threshold = scores[threshold_indx]
-            mask = self.mlp_importance1.importance > threshold
-            x = x * mask
+            if self.masks_mlp1 is None:
+                scores = sorted(self.mlp_importance1.importance.detach())
+                threshold_indx = int(self.ratio * len(scores))
+                threshold = scores[threshold_indx]
+                self.masks_mlp1 = self.mlp_importance1.importance > threshold
+            x = x * self.masks_mlp1
+         
         x = self.fc1(x)
         x = self.act_fn(x)
         x = self.dropout(x)
         x = self.mlp_importance2(x) # for pruning
         if self.prune:
-            scores = sorted(self.mlp_importance2.importance.detach())
-            threshold_indx = int(self.ratio * len(scores))
-            threshold = scores[threshold_indx]
-            mask = self.mlp_importance2.importance > threshold
-            x = x * mask
+            if self.masks_mlp2 is None:
+                scores = sorted(self.mlp_importance2.importance.detach())
+                threshold_indx = int(self.ratio * len(scores))
+                threshold = scores[threshold_indx]
+                self.masks_mlp2 = self.mlp_importance2.importance > threshold
+            x = x * self.masks_mlp2
+        
         x = self.fc2(x)
         x = self.dropout(x)
         return x

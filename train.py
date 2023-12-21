@@ -142,7 +142,7 @@ def train(model, trainloader, testloader, config):
     
     l1_lambda = 0.0001
     
-    while True:
+    while False:
         epoch += 1
         model.train()
         end = time.time()
@@ -198,7 +198,7 @@ def train(model, trainloader, testloader, config):
     print("Final accuracy: \t{}".format(accuracy))
     print("End training")
     
-    torch.save(model.state_dict(), "weights.pth")
+    #torch.save(model.state_dict(), "weights.pth")
     
     # importance_scores = []
     # all_scores = []
@@ -221,7 +221,7 @@ def train(model, trainloader, testloader, config):
     # print(f"Pruning with pruning ratio of {pruning_ratio}")
     # print(f"Threshold value is {threshold}")
     
-    model = ViT(config, img_size, num_classes=10, visualize=False, prune=True, ratio=0.2)
+    model = ViT(config, img_size, num_classes=10, visualize=False, prune=True, ratio=0.2, store_masks=True)
     
     model.load_state_dict(torch.load("weights.pth"))
     model.to(device)
