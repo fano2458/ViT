@@ -28,6 +28,9 @@ def np2th(weights, conv=False):
     return torch.from_numpy(weights)
 
 
+def compute_mask(tensor, threshold):
+    return (tensor.abs() > threshold).float()
+
 
 class ChannelImportance(nn.Module):
     def __init__(self, num_channels):
@@ -70,14 +73,21 @@ class Attention(nn.Module):
         return x.permute(0, 2, 1, 3)
     
     def forward(self, hidden_states): # check shapes            
-        hidden_states = self.channel_importance(hidden_states) # for pruning
+        hidden_states = self.channel_importance(hidden_states) # for pruning # it this part of the code needed during the inference?
+        # if self.prune:
+        #     if self.masks_channel is None:
+        #         print("Computing mask for channels")
+        #         scores = sorted(self.channel_importance.importance.detach())
+        #         threshold_indx = int(self.ratio * len(scores))
+        #         threshold = scores[threshold_indx]
+        #         self.masks_channel = self.channel_importance.importance > threshold
+        #     hidden_states = hidden_states * self.masks_channel
+            
         if self.prune:
             if self.masks_channel is None:
                 print("Computing mask for channels")
-                scores = sorted(self.channel_importance.importance.detach())
-                threshold_indx = int(self.ratio * len(scores))
-                threshold = scores[threshold_indx]
-                self.masks_channel = self.channel_importance.importance > threshold
+                threshold = torch.kthvalue(hidden_states.abs().view(-1), int(self.ratio * hidden_states.nelement()))[0]
+                self.masks_channel = compute_mask(hidden_states, threshold)
             hidden_states = hidden_states * self.masks_channel
             
         mixed_query_layer = self.query(hidden_states)
@@ -103,14 +113,21 @@ class Attention(nn.Module):
         
         context_layer = self.channel_importance(context_layer) # for pruning
         
+        # if self.prune:
+        #     if self.masks_context is None:
+        #         print("Computing mask for context")
+        #         scores = sorted(self.context_importance.importance.detach())
+        #         threshold_indx = int(self.ratio * len(scores))
+        #         threshold = scores[threshold_indx]
+        #         self.masks_context = self.context_importance.importance > threshold
+        #     hidden_states = hidden_states * self.masks_context
+            
         if self.prune:
             if self.masks_context is None:
                 print("Computing mask for context")
-                scores = sorted(self.context_importance.importance.detach())
-                threshold_indx = int(self.ratio * len(scores))
-                threshold = scores[threshold_indx]
-                self.masks_context = self.context_importance.importance > threshold
-            hidden_states = hidden_states * self.masks_context
+                threshold = torch.kthvalue(context_layer.abs().view(-1), int(self.ratio * context_layer.nelement()))[0]
+                self.masks_context = compute_mask(context_layer, threshold)
+            context_layer = context_layer * self.masks_context
             
         attention_output = self.out(context_layer)
         attention_output = self.proj_dropout(attention_output)
@@ -142,26 +159,40 @@ class Mlp(nn.Module):
         
     def forward(self, x):
         x = self.mlp_importance1(x) # for pruning
+        # if self.prune:
+        #     if self.masks_mlp1 is None:
+        #         print("Computing mask for FC1")
+        #         scores = sorted(self.mlp_importance1.importance.detach())
+        #         threshold_indx = int(self.ratio * len(scores))
+        #         threshold = scores[threshold_indx]
+        #         self.masks_mlp1 = self.mlp_importance1.importance > threshold
+        #     x = x * self.masks_mlp1
+            
         if self.prune:
             if self.masks_mlp1 is None:
                 print("Computing mask for FC1")
-                scores = sorted(self.mlp_importance1.importance.detach())
-                threshold_indx = int(self.ratio * len(scores))
-                threshold = scores[threshold_indx]
-                self.masks_mlp1 = self.mlp_importance1.importance > threshold
+                threshold = torch.kthvalue(x.abs().view(-1), int(self.ratio * x.nelement()))[0]
+                self.masks_mlp1 = compute_mask(x, threshold)
             x = x * self.masks_mlp1
          
         x = self.fc1(x)
         x = self.act_fn(x)
         x = self.dropout(x)
         x = self.mlp_importance2(x) # for pruning
+        # if self.prune:
+        #     if self.masks_mlp2 is None:
+        #         print("Computing mask for FC2")
+        #         scores = sorted(self.mlp_importance2.importance.detach())
+        #         threshold_indx = int(self.ratio * len(scores))
+        #         threshold = scores[threshold_indx]
+        #         self.masks_mlp2 = self.mlp_importance2.importance > threshold
+        #     x = x * self.masks_mlp2
+        
         if self.prune:
             if self.masks_mlp2 is None:
                 print("Computing mask for FC2")
-                scores = sorted(self.mlp_importance2.importance.detach())
-                threshold_indx = int(self.ratio * len(scores))
-                threshold = scores[threshold_indx]
-                self.masks_mlp2 = self.mlp_importance2.importance > threshold
+                threshold = torch.kthvalue(x.abs().view(-1), int(self.ratio * x.nelement()))[0]
+                self.masks_mlp2 = compute_mask(x, threshold)
             x = x * self.masks_mlp2
         
         x = self.fc2(x)

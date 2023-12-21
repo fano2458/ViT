@@ -16,8 +16,8 @@ from torchinfo import summary
 batch_size = 64
 img_size = 224
 learning_rate = 3e-2
-total_steps = 10000
-warmup_steps = 500 
+total_steps = 15000
+warmup_steps = 700
 seed = 42
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -142,7 +142,7 @@ def train(model, trainloader, testloader, config):
     
     l1_lambda = 0.0001
     
-    while False:
+    while True:
         epoch += 1
         model.train()
         end = time.time()
@@ -186,7 +186,11 @@ def train(model, trainloader, testloader, config):
                 print("Training ({}/{} Steps)\t(loss={:2.5f})\tData time={:.2f}({:.2f})\tBatch time={:.2f}({:.2f})\tMemory={:.1f}({:.1f})".format(
                         global_step, total_steps, losses.val, data_time.val, data_time.avg, batch_time.val, batch_time.avg, memory_meter.val, memory_meter.avg))
             if global_step % 500 == 0:
-                accuracy = valid(model, testloader, global_step)
+                accuracy_t = valid(model, testloader, global_step)
+                if accuracy_t > accuracy:
+                    accuracy = accuracy_t
+                    torch.save(model.state_dict(), "weights_best.pth")
+        
                 model.train()
             if global_step % total_steps == 0:
                 break
@@ -197,8 +201,6 @@ def train(model, trainloader, testloader, config):
         
     print("Final accuracy: \t{}".format(accuracy))
     print("End training")
-    
-    #torch.save(model.state_dict(), "weights.pth")
     
     # importance_scores = []
     # all_scores = []
@@ -221,9 +223,9 @@ def train(model, trainloader, testloader, config):
     # print(f"Pruning with pruning ratio of {pruning_ratio}")
     # print(f"Threshold value is {threshold}")
     
-    model = ViT(config, img_size, num_classes=10, visualize=False, prune=True, ratio=0.05)
+    model = ViT(config, img_size, num_classes=10, visualize=False, prune=False, ratio=0.10)
     
-    model.load_state_dict(torch.load("weights.pth"))
+    model.load_state_dict(torch.load("weights_best.pth"))
     model.to(device)
     
     accuracy = valid(model, testloader, "Pruned model")
@@ -241,6 +243,9 @@ def train(model, trainloader, testloader, config):
 def main():
     
     transform = transforms.Compose([
+        transforms.RandomHorizontalFlip(),
+        transforms.RandomRotation(10),
+        transforms.RandomAffine(degrees=0, translate=(0.1, 0.1)),
         transforms.Resize(img_size),
         transforms.ToTensor(),
         transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
@@ -249,11 +254,11 @@ def main():
     trainset = torchvision.datasets.CIFAR10(root='./data', train=True,
                                             download=True, transform=transform)
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size,
-                                            shuffle=True)
+                                            shuffle=True, drop_last=True)            # TODO change
     testset = torchvision.datasets.CIFAR10(root='./data', train=False,
                                         download=True, transform=transform)
     testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size,
-                                            shuffle=False)
+                                            shuffle=False, drop_last=True)           # TODO change
     classes = ['plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
     config = CONFIGS["ViT-Ti_16"]
 
