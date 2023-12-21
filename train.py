@@ -16,8 +16,8 @@ from torchinfo import summary
 batch_size = 64
 img_size = 224
 learning_rate = 3e-2
-total_steps = 10000
-warmup_steps = 500
+total_steps = 1000
+warmup_steps = 200 
 seed = 42
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -119,7 +119,7 @@ def valid(model, testloader, global_step):
     return accuracy
 
 
-def train(model, trainloader, testloader):
+def train(model, trainloader, testloader, config):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     memory_meter = AverageMeter()
@@ -140,7 +140,7 @@ def train(model, trainloader, testloader):
     epoch = 0
     accuracy = -1
     
-    l1_lambda = 0.001
+    l1_lambda = 0.0001
     
     while True:
         epoch += 1
@@ -198,10 +198,44 @@ def train(model, trainloader, testloader):
     print("Final accuracy: \t{}".format(accuracy))
     print("End training")
     
+    torch.save(model.state_dict(), "weights.pth")
     
-    for i in range(12):
-        print(f"Layer {i} mask for D size")
-        print(model.transformer.encoder.layer[0].attn.channel_importance.importance) # 0-11
+    # importance_scores = []
+    # all_scores = []
+    # for i in range(0, 12):
+        # importance_scores.append(list(model.transformer.encoder.layer[i].attn.channel_importance.importance.detach(),
+        #                               model.transformer.encoder.layer[i].ffn.mlp_importance1.importance.detach(),
+        #                               model.transformer.encoder.layer[i].ffn.mlp_importance2.importance.detach()))
+        # all_scores.extend(model.transformer.encoder.layer[i].attn.channel_importance.importance.detach())
+        # all_scores.extend(model.transformer.encoder.layer[i].ffn.mlp_importance1.importance.detach())
+        # all_scores.extend(model.transformer.encoder.layer[i].ffn.mlp_importance2.importance.detach())
+        
+    # sorted_all_scores = sorted(all_scores)
+    
+    # pruning_ratio = 0.2
+    
+    # threshold_index = int(pruning_ratio * len(sorted_all_scores))
+    # threshold = sorted_all_scores[threshold_index] 
+    
+    # print(f"Testing of model with masked channels")
+    # print(f"Pruning with pruning ratio of {pruning_ratio}")
+    # print(f"Threshold value is {threshold}")
+    
+    model = ViT(config, img_size, num_classes=10, visualize=False, prune=True, ratio=0.1)
+    
+    model.load_state_dict(torch.load("weights.pth"))
+    model.to(device)
+    
+    accuracy = valid(model, testloader, "Pruned model")
+    
+    print(f"Accuracy of pruned model is {accuracy}")
+    
+    
+    # print(model.model.transformer.encoder.layer[0].attn.channel_importance.importance.detach())
+    
+    # for i in range(12):
+    #     print(f"Layer {i} mask for D size")
+    #     print(model.transformer.encoder.layer[0].attn.channel_importance.importance) # 0-11
     
 
 def main():
@@ -235,7 +269,7 @@ def main():
         row_settings=["var_names"]
     )
 
-    train(model, trainloader, testloader)
+    train(model, trainloader, testloader, config)
     
 
 if __name__ == "__main__":

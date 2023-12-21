@@ -40,14 +40,17 @@ class ChannelImportance(nn.Module):
 
 
 class Attention(nn.Module):
-    def __init__(self, config, visualize):
+    def __init__(self, config, visualize, prune, ratio):
         super(Attention, self).__init__()
         self.visualize = visualize
+        self.prune = prune
+        self.ratio = ratio
         self.num_attention_heads = config.transformer["num_heads"]
         self.attention_head_size = int(config.hidden_size / self.num_attention_heads)
         self.all_head_size = self.num_attention_heads * self.attention_head_size
         
         self.channel_importance = ChannelImportance(self.all_head_size)
+        self.context_importance = ChannelImportance(self.all_head_size)
         
         self.query = Linear(config.hidden_size, self.all_head_size) # why to this dim
         self.key = Linear(config.hidden_size, self.all_head_size)
@@ -64,9 +67,16 @@ class Attention(nn.Module):
         x = x.view(*new_x_shape)
         return x.permute(0, 2, 1, 3)
     
-    def forward(self, hidden_states): # check shapes
-        
+    def forward(self, hidden_states): # check shapes            
         hidden_states = self.channel_importance(hidden_states) # for pruning
+        if self.prune:
+            scores = sorted(self.channel_importance.importance.detach())
+            threshold_indx = int(self.ratio * len(scores))
+            threshold = scores[threshold_indx]
+            mask = self.channel_importance.importance > threshold
+            hidden_states = hidden_states * mask
+            print(hidden_states)
+            
         
         mixed_query_layer = self.query(hidden_states)
         mixed_key_layer = self.key(hidden_states)
@@ -91,14 +101,23 @@ class Attention(nn.Module):
         
         context_layer = self.channel_importance(context_layer) # for pruning
         
+        if self.prune:
+            scores = sorted(self.context_importance.importance.detach())
+            threshold_indx = int(self.ratio * len(scores))
+            threshold = scores[threshold_indx]
+            mask = self.context_importance.importance > threshold
+            hidden_states = hidden_states * mask
+        
         attention_output = self.out(context_layer)
         attention_output = self.proj_dropout(attention_output)
         return attention_output, weights
     
 
 class Mlp(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, prune, ratio):
         super(Mlp, self).__init__()
+        self.prune = prune
+        self.ratio = ratio
         self.fc1 = Linear(config.hidden_size, config.transformer["mlp_dim"])
         self.fc2 = Linear(config.transformer["mlp_dim"], config.hidden_size)
         self.act_fn = torch.nn.functional.gelu
@@ -117,10 +136,22 @@ class Mlp(nn.Module):
         
     def forward(self, x):
         x = self.mlp_importance1(x) # for pruning
+        if self.prune:
+            scores = sorted(self.mlp_importance1.importance.detach())
+            threshold_indx = int(self.ratio * len(scores))
+            threshold = scores[threshold_indx]
+            mask = self.mlp_importance1.importance > threshold
+            x = x * mask
         x = self.fc1(x)
         x = self.act_fn(x)
         x = self.dropout(x)
         x = self.mlp_importance2(x) # for pruning
+        if self.prune:
+            scores = sorted(self.mlp_importance2.importance.detach())
+            threshold_indx = int(self.ratio * len(scores))
+            threshold = scores[threshold_indx]
+            mask = self.mlp_importance2.importance > threshold
+            x = x * mask
         x = self.fc2(x)
         x = self.dropout(x)
         return x
@@ -158,14 +189,14 @@ class Embeddings(nn.Module):
         
 
 class Block(nn.Module):
-    def __init__(self, config, visualize):
+    def __init__(self, config, visualize, prune, ratio):
         super(Block, self).__init__()
         self.hidden_size = config.hidden_size
         
         self.attention_norm = LayerNorm(config.hidden_size, eps=1e-6)
         self.ffn_norm = LayerNorm(config.hidden_size, eps=1e-6)
-        self.ffn = Mlp(config)
-        self.attn = Attention(config, visualize)
+        self.ffn = Mlp(config, prune, ratio)
+        self.attn = Attention(config, visualize, prune, ratio)
         
     def forward(self, x):
         h = x
@@ -219,14 +250,14 @@ class Block(nn.Module):
             
 
 class Encoder(nn.Module):
-    def __init__(self, config, visualize, **block_kwargs):
+    def __init__(self, config, visualize, prune, ratio, **block_kwargs):
         super(Encoder, self).__init__()
         self.visualize = visualize
         self.layer = nn.ModuleList()
         self.encoder_norm = LayerNorm(config.hidden_size, eps=1e-6)
         
         for _ in range(config.transformer["num_layers"]):
-            layer = Block(config, visualize, **block_kwargs)
+            layer = Block(config, visualize, prune, ratio, **block_kwargs)
             self.layer.append(copy.deepcopy(layer))
             
     def forward(self, hidden_states):
@@ -240,12 +271,12 @@ class Encoder(nn.Module):
     
     
 class Transformer(nn.Module):
-    def __init__(self, config, img_size, visualize, quantize=False, half=False, **kwargs):
+    def __init__(self, config, img_size, visualize, prune, ratio, quantize=False, half=False, **kwargs):
         super(Transformer, self).__init__()
         self.embeddings = Embeddings(config, img_size=img_size)
         config.quantize = quantize
         config.half = half
-        self.encoder = Encoder(config, visualize, **kwargs)
+        self.encoder = Encoder(config, visualize, prune, ratio, **kwargs)
         
     def forward(self, input_ids):
         embedding_output = self.embeddings(input_ids)
@@ -254,12 +285,12 @@ class Transformer(nn.Module):
     
 
 class ViT(nn.Module):
-    def __init__(self, config, img_size=224, num_classes=10, visualize=False, **kwargs):
+    def __init__(self, config, img_size=224, num_classes=10, visualize=False, prune=False, ratio=None, **kwargs):
         super(ViT, self).__init__()
         self.num_classes = num_classes
         self.classifier = config.classifier
         
-        self.transformer = Transformer(config, img_size, visualize, **kwargs)
+        self.transformer = Transformer(config, img_size, visualize, prune, ratio, **kwargs)
         self.head = Linear(config.hidden_size, num_classes)
         
     def forward(self, x):
