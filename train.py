@@ -16,8 +16,8 @@ from torchinfo import summary
 batch_size = 64
 img_size = 224
 learning_rate = 3e-2
-total_steps = 1000
-warmup_steps = 200 
+total_steps = 10000
+warmup_steps = 500 
 seed = 42
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -221,7 +221,7 @@ def train(model, trainloader, testloader, config):
     # print(f"Pruning with pruning ratio of {pruning_ratio}")
     # print(f"Threshold value is {threshold}")
     
-    model = ViT(config, img_size, num_classes=10, visualize=False, prune=True, ratio=0.1)
+    model = ViT(config, img_size, num_classes=10, visualize=False, prune=True, ratio=0.2)
     
     model.load_state_dict(torch.load("weights.pth"))
     model.to(device)

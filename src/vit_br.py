@@ -75,8 +75,6 @@ class Attention(nn.Module):
             threshold = scores[threshold_indx]
             mask = self.channel_importance.importance > threshold
             hidden_states = hidden_states * mask
-            print(hidden_states)
-            
         
         mixed_query_layer = self.query(hidden_states)
         mixed_key_layer = self.key(hidden_states)
